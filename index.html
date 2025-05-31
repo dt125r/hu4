@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ティラノビルダー用UIフレーム作成ツール</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f0f0f0;
+    }
+    header {
+      background: #444;
+      color: white;
+      padding: 1em;
+      text-align: center;
+    }
+    #main {
+      display: flex;
+      padding: 1em;
+      gap: 1em;
+    }
+    #controls {
+      width: 300px;
+      background: white;
+      padding: 1em;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      overflow-y: auto;
+      max-height: 90vh;
+    }
+    #preview-area {
+      flex: 1;
+      background: #ddd;
+      border-radius: 8px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+    canvas {
+      background: white;
+      border: 1px solid #aaa;
+    }
+    input, select, textarea, button {
+      width: 100%;
+      margin-bottom: 0.5em;
+    }
+    #templateSelect {
+      margin-bottom: 1em;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ティラノビルダー用UIフレーム作成ツール</h1>
+  </header>
+  <div id="main">
+    <div id="controls">
+      <label>テンプレート選択：</label>
+      <select id="templateSelect">
+        <option value="">-- テンプレートを選択 --</option>
+        <option value="minimal">ミニマル</option>
+        <option value="glow">光彩付き</option>
+        <option value="rounded">角丸フレーム</option>
+      </select>
+
+      <label>背景画像をドロップ：</label>
+      <div id="drop-area" style="border:1px dashed #aaa; padding:1em; text-align:center;">ここに画像をドロップ</div>
+      <label>背景透明度：</label>
+      <input type="range" id="opacity" min="0" max="1" step="0.01" value="1">
+      <label>背景ぼかし(px)：</label>
+      <input type="number" id="blur" min="0" value="0">
+      <label>背景光彩（0-100%）：</label>
+      <input type="range" id="glow" min="0" max="1" step="0.01" value="0">
+
+      <label>ループアニメーション方向：</label>
+      <select id="loopDir">
+        <option value="none">なし</option>
+        <option value="x">横</option>
+        <option value="y">縦</option>
+        <option value="xy">斜め</option>
+      </select>
+
+      <label>角の丸み(px)：</label>
+      <input type="number" id="borderRadius" value="10">
+      <label>枠線の色：</label>
+      <input type="color" id="borderColor" value="#000000">
+      <label>枠線の太さ(px)：</label>
+      <input type="number" id="borderWidth" value="2">
+
+      <label>変数表示（例：f.love）：</label>
+      <input type="text" id="variable" placeholder="f.love">
+      <label>前の文字：</label>
+      <input type="text" id="prefix" placeholder="好感度：">
+      <label>後の文字：</label>
+      <input type="text" id="suffix" placeholder="">
+
+      <label>表示位置（左/中央/右）：</label>
+      <select id="textAlign">
+        <option value="left">左</option>
+        <option value="center" selected>中央</option>
+        <option value="right">右</option>
+      </select>
+
+      <button onclick="downloadImage()">画像保存</button>
+      <button onclick="resetForm()">リセット</button>
+    </div>
+    <div id="preview-area">
+      <canvas id="preview" width="400" height="200"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('preview');
+    const ctx = canvas.getContext('2d');
+    let bgImage = null;
+    let offsetX = 0, offsetY = 0;
+    let loopDir = 'none';
+
+    const dropArea = document.getElementById('drop-area');
+    dropArea.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropArea.style.background = '#eee';
+    });
+    dropArea.addEventListener('dragleave', e => {
+      dropArea.style.background = '';
+    });
+    dropArea.addEventListener('drop', e => {
+      e.preventDefault();
+      dropArea.style.background = '';
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          const img = new Image();
+          img.onload = () => {
+            bgImage = img;
+            draw();
+          }
+          img.src = evt.target.result;
+        }
+        reader.readAsDataURL(file);
+      }
+    });
+
+    function draw() {
+      const opacity = parseFloat(document.getElementById('opacity').value);
+      const blur = parseInt(document.getElementById('blur').value);
+      const glow = parseFloat(document.getElementById('glow').value);
+      const borderRadius = parseInt(document.getElementById('borderRadius').value);
+      const borderColor = document.getElementById('borderColor').value;
+      const borderWidth = parseInt(document.getElementById('borderWidth').value);
+      const variable = document.getElementById('variable').value;
+      const prefix = document.getElementById('prefix').value;
+      const suffix = document.getElementById('suffix').value;
+      const textAlign = document.getElementById('textAlign').value;
+
+      loopDir = document.getElementById('loopDir').value;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (bgImage) {
+        ctx.save();
+        ctx.globalAlpha = opacity;
+        ctx.filter = `blur(${blur}px)`;
+        ctx.drawImage(bgImage, -offsetX, -offsetY, canvas.width, canvas.height);
+        ctx.restore();
+      }
+
+      // フレーム描画
+      ctx.lineWidth = borderWidth;
+      ctx.strokeStyle = borderColor;
+      ctx.beginPath();
+      const r = borderRadius;
+      const w = canvas.width, h = canvas.height;
+      ctx.moveTo(r, 0);
+      ctx.lineTo(w - r, 0);
+      ctx.quadraticCurveTo(w, 0, w, r);
+      ctx.lineTo(w, h - r);
+      ctx.quadraticCurveTo(w, h, w - r, h);
+      ctx.lineTo(r, h);
+      ctx.quadraticCurveTo(0, h, 0, h - r);
+      ctx.lineTo(0, r);
+      ctx.quadraticCurveTo(0, 0, r, 0);
+      ctx.stroke();
+
+      // 光彩（仮実装：影で代用）
+      if (glow > 0) {
+        ctx.shadowColor = borderColor;
+        ctx.shadowBlur = glow * 50;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      // テキスト描画
+      ctx.fillStyle = "#000";
+      ctx.font = "20px sans-serif";
+      const text = `${prefix}${variable}${suffix}`;
+      let x = 20;
+      if (textAlign === 'center') x = canvas.width / 2;
+      if (textAlign === 'right') x = canvas.width - 20;
+      ctx.textAlign = textAlign;
+      ctx.fillText(text, x, h / 2);
+    }
+
+    function animateLoop() {
+      if (loopDir === 'x') offsetX = (offsetX + 1) % canvas.width;
+      if (loopDir === 'y') offsetY = (offsetY + 1) % canvas.height;
+      if (loopDir === 'xy') {
+        offsetX = (offsetX + 1) % canvas.width;
+        offsetY = (offsetY + 1) % canvas.height;
+      }
+      draw();
+      requestAnimationFrame(animateLoop);
+    }
+
+    animateLoop();
+
+    function downloadImage() {
+      const link = document.createElement('a');
+      link.download = 'frame.png';
+      link.href = canvas.toDataURL();
+      link.click();
+    }
+
+    function resetForm() {
+      document.getElementById('opacity').value = 1;
+      document.getElementById('blur').value = 0;
+      document.getElementById('glow').value = 0;
+      document.getElementById('borderRadius').value = 10;
+      document.getElementById('borderColor').value = '#000000';
+      document.getElementById('borderWidth').value = 2;
+      document.getElementById('variable').value = '';
+      document.getElementById('prefix').value = '';
+      document.getElementById('suffix').value = '';
+      document.getElementById('loopDir').value = 'none';
+      document.getElementById('templateSelect').value = '';
+      document.getElementById('textAlign').value = 'center';
+      offsetX = 0;
+      offsetY = 0;
+      draw();
+    }
+
+    document.querySelectorAll('input, select').forEach(el => el.addEventListener('input', draw));
+
+    document.getElementById('templateSelect').addEventListener('change', e => {
+      const val = e.target.value;
+      if (val === 'minimal') {
+        document.getElementById('borderWidth').value = 1;
+        document.getElementById('borderRadius').value = 0;
+        document.getElementById('glow').value = 0;
+      } else if (val === 'glow') {
+        document.getElementById('borderWidth').value = 2;
+        document.getElementById('borderRadius').value = 10;
+        document.getElementById('glow').value = 0.5;
+      } else if (val === 'rounded') {
+        document.getElementById('borderWidth').value = 3;
+        document.getElementById('borderRadius').value = 30;
+        document.getElementById('glow').value = 0.2;
+      }
+      draw();
+    });
+  </script>
+</body>
+</html>
