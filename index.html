@@ -82,6 +82,8 @@
         <option value="y">縦</option>
         <option value="xy">斜め</option>
       </select>
+      <label>アニメーション速度：</label>
+      <input type="range" id="loopSpeed" min="0" max="10" step="0.1" value="1">
 
       <label>角の丸み(px)：</label>
       <input type="number" id="borderRadius" value="10">
@@ -90,21 +92,20 @@
       <label>枠線の太さ(px)：</label>
       <input type="number" id="borderWidth" value="2">
 
-      <label>変数表示（例：f.love）：</label>
+      <label>変数表示（例：&eval f.love）：</label>
       <input type="text" id="variable" placeholder="f.love">
       <label>前の文字：</label>
       <input type="text" id="prefix" placeholder="好感度：">
       <label>後の文字：</label>
       <input type="text" id="suffix" placeholder="">
 
-      <label>表示位置（左/中央/右）：</label>
-      <select id="textAlign">
-        <option value="left">左</option>
-        <option value="center" selected>中央</option>
-        <option value="right">右</option>
-      </select>
+      <label>文字位置X(px)：</label>
+      <input type="number" id="textX" value="100">
+      <label>文字位置Y(px)：</label>
+      <input type="number" id="textY" value="100">
 
       <button onclick="downloadImage()">画像保存</button>
+      <button onclick="downloadPluginZip()">プラグイン出力</button>
       <button onclick="resetForm()">リセット</button>
     </div>
     <div id="preview-area">
@@ -118,6 +119,8 @@
     let bgImage = null;
     let offsetX = 0, offsetY = 0;
     let loopDir = 'none';
+    let loopSpeed = 1;
+    let bgPattern = null;
 
     const dropArea = document.getElementById('drop-area');
     dropArea.addEventListener('dragover', e => {
@@ -137,6 +140,7 @@
           const img = new Image();
           img.onload = () => {
             bgImage = img;
+            bgPattern = ctx.createPattern(bgImage, 'repeat');
             draw();
           }
           img.src = evt.target.result;
@@ -155,21 +159,24 @@
       const variable = document.getElementById('variable').value;
       const prefix = document.getElementById('prefix').value;
       const suffix = document.getElementById('suffix').value;
-      const textAlign = document.getElementById('textAlign').value;
+      const textX = parseInt(document.getElementById('textX').value);
+      const textY = parseInt(document.getElementById('textY').value);
 
       loopDir = document.getElementById('loopDir').value;
+      loopSpeed = parseFloat(document.getElementById('loopSpeed').value);
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (bgImage) {
+      if (bgPattern) {
         ctx.save();
         ctx.globalAlpha = opacity;
         ctx.filter = `blur(${blur}px)`;
-        ctx.drawImage(bgImage, -offsetX, -offsetY, canvas.width, canvas.height);
+        ctx.translate(-offsetX, -offsetY);
+        ctx.fillStyle = bgPattern;
+        ctx.fillRect(offsetX, offsetY, canvas.width + offsetX, canvas.height + offsetY);
         ctx.restore();
       }
 
-      // フレーム描画
       ctx.lineWidth = borderWidth;
       ctx.strokeStyle = borderColor;
       ctx.beginPath();
@@ -186,7 +193,6 @@
       ctx.quadraticCurveTo(0, 0, r, 0);
       ctx.stroke();
 
-      // 光彩（仮実装：影で代用）
       if (glow > 0) {
         ctx.shadowColor = borderColor;
         ctx.shadowBlur = glow * 50;
@@ -194,23 +200,20 @@
         ctx.shadowBlur = 0;
       }
 
-      // テキスト描画
       ctx.fillStyle = "#000";
       ctx.font = "20px sans-serif";
-      const text = `${prefix}${variable}${suffix}`;
-      let x = 20;
-      if (textAlign === 'center') x = canvas.width / 2;
-      if (textAlign === 'right') x = canvas.width - 20;
-      ctx.textAlign = textAlign;
-      ctx.fillText(text, x, h / 2);
+      const text = `${prefix}&eval ${variable}${suffix}`;
+      ctx.textAlign = "left";
+      ctx.fillText(text, textX, textY);
     }
 
     function animateLoop() {
-      if (loopDir === 'x') offsetX = (offsetX + 1) % canvas.width;
-      if (loopDir === 'y') offsetY = (offsetY + 1) % canvas.height;
+      if (!bgImage) return requestAnimationFrame(animateLoop);
+      if (loopDir === 'x') offsetX = (offsetX + loopSpeed) % bgImage.width;
+      if (loopDir === 'y') offsetY = (offsetY + loopSpeed) % bgImage.height;
       if (loopDir === 'xy') {
-        offsetX = (offsetX + 1) % canvas.width;
-        offsetY = (offsetY + 1) % canvas.height;
+        offsetX = (offsetX + loopSpeed) % bgImage.width;
+        offsetY = (offsetY + loopSpeed) % bgImage.height;
       }
       draw();
       requestAnimationFrame(animateLoop);
@@ -225,6 +228,20 @@
       link.click();
     }
 
+    function downloadPluginZip() {
+      const zip = new JSZip();
+      const pluginFolder = zip.folder("frame_plugin");
+      const html = canvas.toDataURL("image/png");
+      pluginFolder.file("frame.png", html.split(",")[1], {base64: true});
+      pluginFolder.file("plugin.xml", `<plugin><name>frame_plugin</name><version>1.0</version><description>Frame UI Plugin</description></plugin>`);
+      zip.generateAsync({type: "blob"}).then(function(content) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(content);
+        a.download = "frame_plugin.zip";
+        a.click();
+      });
+    }
+
     function resetForm() {
       document.getElementById('opacity').value = 1;
       document.getElementById('blur').value = 0;
@@ -236,8 +253,10 @@
       document.getElementById('prefix').value = '';
       document.getElementById('suffix').value = '';
       document.getElementById('loopDir').value = 'none';
+      document.getElementById('loopSpeed').value = 1;
       document.getElementById('templateSelect').value = '';
-      document.getElementById('textAlign').value = 'center';
+      document.getElementById('textX').value = 100;
+      document.getElementById('textY').value = 100;
       offsetX = 0;
       offsetY = 0;
       draw();
@@ -263,5 +282,6 @@
       draw();
     });
   </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </body>
 </html>
